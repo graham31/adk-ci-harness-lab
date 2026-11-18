@@ -1,0 +1,35 @@
+# LOW-TRUST writer. Models the fork-reachable CI job that populates the uv cache
+# (ADK: `setup-uv enable-cache: true` on `pull_request`). Writes a sentinel into
+# a fixed-key cache. If a privileged job (20-*) later restores it, the release
+# build could be fed attacker-controlled bytes.
+name: harness-cache-writer-pr
+
+on:
+  pull_request:
+
+permissions:
+  contents: read          # fork PRs get read-only regardless; stated explicitly
+
+jobs:
+  write-poison:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Stage poison marker
+        run: |
+          mkdir -p uv-cache
+          {
+            echo "HARNESS_POISON_SENTINEL"
+            echo "run_id=${{ github.run_id }}"
+            echo "actor=${{ github.actor }}"
+            echo "event=${{ github.event_name }}"
+            echo "base_repo=${{ github.repository }}"
+            echo "head_repo=${{ github.event.pull_request.head.repo.full_name }}"
+          } > uv-cache/poison.txt
+          cat uv-cache/poison.txt
+
+      # Split save action = deterministic, always-attempt save under a fixed key.
+      - name: Write shared-key cache
+        uses: actions/cache/save@v4
+        with:
+          path: uv-cache
+          key: harness-uv-cache-v1

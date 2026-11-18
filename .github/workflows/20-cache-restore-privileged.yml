@@ -1,0 +1,35 @@
+# HIGH-TRUST reader. Models the release/publish job that restores the uv cache
+# on `main` / a release branch before `uv build`. If it restores the sentinel
+# written by the low-trust writer (10-*), the trust boundary is broken.
+name: harness-cache-restore-privileged
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  restore-and-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restore shared-key cache
+        id: restore
+        uses: actions/cache/restore@v4
+        with:
+          path: uv-cache
+          key: harness-uv-cache-v1
+
+      - name: Verdict
+        run: |
+          echo "cache-hit=${{ steps.restore.outputs.cache-hit }}"
+          if [ -f uv-cache/poison.txt ] && grep -q HARNESS_POISON_SENTINEL uv-cache/poison.txt; then
+            echo "HARNESS_VERDICT=EXPOSED"
+            echo "::error::EXPOSED — privileged job restored a cache written by a lower-trust trigger"
+            echo "----- restored marker -----"
+            cat uv-cache/poison.txt
+          else
+            echo "HARNESS_VERDICT=SAFE — no lower-trust cache was restorable here"
+          fi
